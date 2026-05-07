@@ -2,6 +2,7 @@ const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const User = require("../models/usermodel");
+const sendEmail = require("../utils/sendEmail")
 
 // ==========================
 // TOKEN GENERATOR
@@ -87,45 +88,79 @@ const loginUser = async (req, res) => {
 // ==========================
 // FORGOT PASSWORD
 // ==========================
+
 const forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
 
     if (!email) {
-      return res.status(400).json({ message: "Email is required" });
+      return res.status(400).json({
+        message: "Email is required",
+      });
     }
 
     const user = await User.findOne({ email });
 
-    // Don't reveal user existence (security)
+    // Security protection
     if (!user) {
       return res.json({
         message: "If that email exists, a reset link has been sent",
       });
     }
 
+    // Generate reset token
     const resetToken = crypto.randomBytes(32).toString("hex");
 
+    // Hash token
     const hashedToken = crypto
       .createHash("sha256")
       .update(resetToken)
       .digest("hex");
 
+    // Save token + expiry
     user.resetPasswordToken = hashedToken;
     user.resetPasswordExpire = Date.now() + 15 * 60 * 1000;
 
     await user.save();
 
-    const resetUrl = `${req.protocol}://${req.get("host")}/reset-password/${resetToken}`;
+    // Reset URL
+    const resetUrl = `http://188.34.166.115/reset-password/${resetToken}`;
 
-    console.log("🔐 Reset URL:", resetUrl);
+    // Email message
+    const message = `
+      <h2>MASMAP Password Reset</h2>
+
+      <p>You requested a password reset.</p>
+
+      <p>Click below to reset your password:</p>
+
+      <a href="${resetUrl}">
+        Reset Password
+      </a>
+
+      <p>This link expires in 15 minutes.</p>
+    `;
+
+    // Send email
+    await sendEmail({
+      email: user.email,
+      subject: "Password Reset Request",
+      message,
+    });
+
+    console.log("✅ Reset Email Sent");
 
     res.json({
-      message: "If that email exists, a reset link has been sent",
+      success: true,
+      message: "Reset email sent successfully",
     });
 
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error(error);
+
+    res.status(500).json({
+      message: "Email sending failed",
+    });
   }
 };
 
